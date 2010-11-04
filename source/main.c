@@ -9,8 +9,8 @@
 #include <sys/dir.h>
 #include <errno.h>
 
-#include <elm.h>
-#include <usync.h>
+#include <sdcard/wiisd_io.h>
+#include <fat.h>
 
 #define		DEBUG			0
 
@@ -226,28 +226,6 @@ void hexdump(FILE *fp, void *d, int len) {
 	}
 }
 
-//-----------------------------------------------------------------------------
-int SetupELM()
-//-----------------------------------------------------------------------------
-{
-	uSyncInit();
-	int ret = ELM_Mount();
-	if(ret & 1) {
-		printf("Unable to mount SD  %d\n", ELM_GetMountError(ELM_SD));
-		return -1;
-	}
-	if(ret & 2){
-		printf("Unable to mount USB %d\n", ELM_GetMountError(ELM_USB));
-	}
-	if(ret & 4) {
-		printf("Unable to mount GCA %d\n", ELM_GetMountError(ELM_GCA));
-	}
-	if(ret & 8) {
-		printf("Unable to mount GCB %d\n", ELM_GetMountError(ELM_GCB));
-	}
-	return 0;
-}
-
 //--------------------------------------------------------------------------------
 void Init() {
 //--------------------------------------------------------------------------------
@@ -297,11 +275,15 @@ void Init() {
 	ShowProgramInfo();
 
 	PrintPositioned( 15 , 0 , "Initializing FAT File System.........." );
-	uSyncInit();
-	int ret = ELM_Mount();
-	if ( ret & 1 ) {
-		PrintPositioned( 15 , 45 , "ELM_Mount failed :( \n" );
-		printf("ELM_Mount returned: %d\n", ret);
+	if(!fatInitDefault()) {
+		printf("fatInit failed\n");
+		WaitForButtonPress();
+		ExitToLoader( EELMMOUNT );
+	}
+	int ret = fatMountSimple("sd", &__io_wiisd);
+	if ( !ret ) {
+		PrintPositioned( 15 , 45 , "fatMount failed :( \n" );
+		printf("fatMount returned: %d\n", ret);
 		WaitForButtonPress();
 		ExitToLoader( EELMMOUNT );
 	}
@@ -322,9 +304,7 @@ int main(int argc, char **argv)
 	fp = fopen("sd:/sys/device.cert", "w");
 	if ( fp == NULL ) {
 		printf( "Error opening device.cert" );
-		int err = ELM_GetError();
-		printf( "Error code: %d\n" , err );
-		ELM_Unmount();
+		fatUnmount("sd:");
 		WaitForButtonPress();
 		ExitToLoader(1);
 	}
@@ -338,10 +318,11 @@ int main(int argc, char **argv)
 			fwrite(devcert, 0x180, 1, fp);
 		}
 		fclose(fp);
-		ELM_Unmount();
+		fatUnmount("sd:");
 		free(devcert);
 	}
-	sleep(10);
+	printf("File written, please wait for restart\n");
+	sleep(5);
 	return 0;
 }
 
